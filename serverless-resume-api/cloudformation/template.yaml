@@ -1,0 +1,453 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Serverless Resume REST API on AWS.
+  Provisions Amazon DynamoDB table, AWS Lambda backend, Amazon API Gateway with API Key
+  authentication, usage plan rate-limiting, and least-privilege IAM execution roles.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: "Prod"
+    AllowedValues: ["Dev", "Stage", "Prod"]
+    Description: Deployment environment stage.
+
+  MonthlyRequestQuota:
+    Type: Number
+    Default: 5000
+    Description: Maximum requests permitted per month on the API Key usage plan.
+
+  RateLimitPerSecond:
+    Type: Number
+    Default: 10
+    Description: Steady-state request rate limit per second.
+
+  BurstLimit:
+    Type: Number
+    Default: 20
+    Description: Maximum burst request capacity permitted by the usage plan.
+
+Resources:
+
+  # ----------------------------------------------------------------------------
+  # 1. DATA STORAGE: AMAZON DYNAMODB TABLE
+  # ----------------------------------------------------------------------------
+  ServerlessResumeTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "ServerlessResumeTable-${Environment}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: section
+          AttributeType: S
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: section
+          KeyType: HASH
+        - AttributeName: id
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: ServerlessResumeAPI
+
+  # ----------------------------------------------------------------------------
+  # 2. IAM EXECUTION ROLE FOR LAMBDA
+  # ----------------------------------------------------------------------------
+  ResumeLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "ResumeApi-LambdaExecutionRole-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBResumeTableReadPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:BatchGetItem
+                Resource: !GetAtt ServerlessResumeTable.Arn
+
+  # ----------------------------------------------------------------------------
+  # 3. BACKEND: AWS LAMBDA FUNCTION
+  # ----------------------------------------------------------------------------
+  ResumeApiFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "ServerlessResumeApiFunction-${Environment}"
+      Description: "Backend handler for Serverless Resume API endpoints"
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      Role: !GetAtt ResumeLambdaExecutionRole.Arn
+      Timeout: 15
+      MemorySize: 256
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ServerlessResumeTable
+          STAGE: !Ref Environment
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import boto3
+          from decimal import Decimal
+
+          TABLE_NAME = os.environ.get('TABLE_NAME', 'ServerlessResumeTable-Prod')
+          dynamodb = boto3.resource('dynamodb')
+          table = dynamodb.Table(TABLE_NAME)
+
+          class DecimalEncoder(json.JSONEncoder):
+              def default(self, obj):
+                  if isinstance(obj, Decimal):
+                      return int(obj) if obj % 1 == 0 else float(obj)
+                  return super(DecimalEncoder, self).default(obj)
+
+          def build_response(status_code, body):
+              return {
+                  'statusCode': status_code,
+                  'headers': {
+                      'Content-Type': 'application/json',
+                      'Access-Control-Allow-Origin': '*',
+                      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                      'Access-Control-Allow-Headers': 'Content-Type, X-Amz-Date, Authorization, X-Api-Key, x-api-key'
+                  },
+                  'body': json.dumps(body, cls=DecimalEncoder, indent=2)
+              }
+
+          def lambda_handler(event, context):
+              http_method = event.get('httpMethod', 'GET').upper()
+              if http_method == 'OPTIONS':
+                  return build_response(200, {'message': 'CORS preflight OK'})
+
+              raw_path = event.get('path', '/').strip().lower()
+              for prefix in ['/prod', '/stage', '/dev']:
+                  if raw_path.startswith(prefix):
+                      raw_path = raw_path[len(prefix):]
+              raw_path = raw_path.rstrip('/') or '/'
+
+              if raw_path in ['/health', '/ping']:
+                  return build_response(200, {'status': 'healthy', 'service': 'Serverless Resume API'})
+
+              route_map = {
+                  '/resume': 'all',
+                  '/resume/personal': 'personal',
+                  '/resume/experience': 'experience',
+                  '/resume/education': 'education',
+                  '/resume/skills': 'skills',
+                  '/resume/projects': 'projects',
+                  '/resume/certifications': 'certifications'
+              }
+              section = route_map.get(raw_path)
+              if not section:
+                  return build_response(404, {'error': 'Route not found', 'path': raw_path})
+
+              try:
+                  if section == 'all':
+                      res = table.scan()
+                      items = res.get('Items', [])
+                      return build_response(200, {'status': 'success', 'section': 'all', 'data': items})
+                  else:
+                      from boto3.dynamodb.conditions import Key
+                      res = table.query(KeyConditionExpression=Key('section').eq(section))
+                      items = res.get('Items', [])
+                      return build_response(200, {'status': 'success', 'section': section, 'data': items})
+              except Exception as e:
+                  return build_response(500, {'error': str(e)})
+
+  # ----------------------------------------------------------------------------
+  # 4. API GATEWAY: REST API, RESOURCES, METHODS, & API KEY ENFORCEMENT
+  # ----------------------------------------------------------------------------
+  ResumeRestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub "ServerlessResumeApi-${Environment}"
+      Description: "Serverless REST API serving professional resume data"
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  # Root Resource: /resume
+  ResumeResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ResumeRestApi
+      ParentId: !GetAtt ResumeRestApi.RootResourceId
+      PathPart: "resume"
+
+  # GET /resume
+  ResumeGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ResumeRestApi
+      ResourceId: !Ref ResumeResource
+      HttpMethod: "GET"
+      AuthorizationType: "NONE"
+      ApiKeyRequired: true
+      Integration:
+        Type: "AWS_PROXY"
+        IntegrationHttpMethod: "POST"
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ResumeApiFunction.Arn}/invocations"
+
+  # Sub-resource: /resume/personal
+  PersonalResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ResumeRestApi
+      ParentId: !Ref ResumeResource
+      PathPart: "personal"
+
+  PersonalGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ResumeRestApi
+      ResourceId: !Ref PersonalResource
+      HttpMethod: "GET"
+      AuthorizationType: "NONE"
+      ApiKeyRequired: true
+      Integration:
+        Type: "AWS_PROXY"
+        IntegrationHttpMethod: "POST"
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ResumeApiFunction.Arn}/invocations"
+
+  # Sub-resource: /resume/experience
+  ExperienceResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ResumeRestApi
+      ParentId: !Ref ResumeResource
+      PathPart: "experience"
+
+  ExperienceGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ResumeRestApi
+      ResourceId: !Ref ExperienceResource
+      HttpMethod: "GET"
+      AuthorizationType: "NONE"
+      ApiKeyRequired: true
+      Integration:
+        Type: "AWS_PROXY"
+        IntegrationHttpMethod: "POST"
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ResumeApiFunction.Arn}/invocations"
+
+  # Sub-resource: /resume/education
+  EducationResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ResumeRestApi
+      ParentId: !Ref ResumeResource
+      PathPart: "education"
+
+  EducationGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ResumeRestApi
+      ResourceId: !Ref EducationResource
+      HttpMethod: "GET"
+      AuthorizationType: "NONE"
+      ApiKeyRequired: true
+      Integration:
+        Type: "AWS_PROXY"
+        IntegrationHttpMethod: "POST"
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ResumeApiFunction.Arn}/invocations"
+
+  # Sub-resource: /resume/skills
+  SkillsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ResumeRestApi
+      ParentId: !Ref ResumeResource
+      PathPart: "skills"
+
+  SkillsGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ResumeRestApi
+      ResourceId: !Ref SkillsResource
+      HttpMethod: "GET"
+      AuthorizationType: "NONE"
+      ApiKeyRequired: true
+      Integration:
+        Type: "AWS_PROXY"
+        IntegrationHttpMethod: "POST"
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ResumeApiFunction.Arn}/invocations"
+
+  # Sub-resource: /resume/projects
+  ProjectsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ResumeRestApi
+      ParentId: !Ref ResumeResource
+      PathPart: "projects"
+
+  ProjectsGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ResumeRestApi
+      ResourceId: !Ref ProjectsResource
+      HttpMethod: "GET"
+      AuthorizationType: "NONE"
+      ApiKeyRequired: true
+      Integration:
+        Type: "AWS_PROXY"
+        IntegrationHttpMethod: "POST"
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ResumeApiFunction.Arn}/invocations"
+
+  # Sub-resource: /resume/certifications
+  CertificationsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ResumeRestApi
+      ParentId: !Ref ResumeResource
+      PathPart: "certifications"
+
+  CertificationsGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ResumeRestApi
+      ResourceId: !Ref CertificationsResource
+      HttpMethod: "GET"
+      AuthorizationType: "NONE"
+      ApiKeyRequired: true
+      Integration:
+        Type: "AWS_PROXY"
+        IntegrationHttpMethod: "POST"
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ResumeApiFunction.Arn}/invocations"
+
+  # Unauthenticated Resource: /health
+  HealthResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ResumeRestApi
+      ParentId: !GetAtt ResumeRestApi.RootResourceId
+      PathPart: "health"
+
+  HealthGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ResumeRestApi
+      ResourceId: !Ref HealthResource
+      HttpMethod: "GET"
+      AuthorizationType: "NONE"
+      ApiKeyRequired: false
+      Integration:
+        Type: "AWS_PROXY"
+        IntegrationHttpMethod: "POST"
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ResumeApiFunction.Arn}/invocations"
+
+  # ----------------------------------------------------------------------------
+  # 5. DEPLOYMENT & STAGE
+  # ----------------------------------------------------------------------------
+  ResumeApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - ResumeGetMethod
+      - PersonalGetMethod
+      - ExperienceGetMethod
+      - EducationGetMethod
+      - SkillsGetMethod
+      - ProjectsGetMethod
+      - CertificationsGetMethod
+      - HealthGetMethod
+    Properties:
+      RestApiId: !Ref ResumeRestApi
+
+  ResumeApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref ResumeRestApi
+      DeploymentId: !Ref ResumeApiDeployment
+      StageName: !Ref Environment
+      Description: !Sub "${Environment} deployment stage for Serverless Resume API"
+
+  # ----------------------------------------------------------------------------
+  # 6. SECURITY CONTROLS: API KEY & USAGE PLAN (RATE LIMITING & QUOTAS)
+  # ----------------------------------------------------------------------------
+  ResumeApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: !Sub "ResumeApiClientKey-${Environment}"
+      Description: "API Key required to authenticate against Resume API endpoints"
+      Enabled: true
+      StageKeys:
+        - RestApiId: !Ref ResumeRestApi
+          StageName: !Ref Environment
+    DependsOn: ResumeApiStage
+
+  ResumeApiUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      UsagePlanName: !Sub "ResumeApiUsagePlan-${Environment}"
+      Description: "Throttles request rates and enforces monthly quota"
+      ApiStages:
+        - ApiId: !Ref ResumeRestApi
+          Stage: !Ref Environment
+      Throttle:
+        RateLimit: !Ref RateLimitPerSecond
+        BurstLimit: !Ref BurstLimit
+      Quota:
+        Limit: !Ref MonthlyRequestQuota
+        Period: MONTH
+    DependsOn: ResumeApiStage
+
+  ResumeApiUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref ResumeApiKey
+      KeyType: "API_KEY"
+      UsagePlanId: !Ref ResumeApiUsagePlan
+
+  # ----------------------------------------------------------------------------
+  # 7. LAMBDA INVOCATION PERMISSION FOR API GATEWAY
+  # ----------------------------------------------------------------------------
+  ResumeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !GetAtt ResumeApiFunction.Arn
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ResumeRestApi}/*/*/*"
+
+Outputs:
+  ApiInvokeUrl:
+    Description: "Base URL for the deployed Serverless Resume API"
+    Value: !Sub "https://${ResumeRestApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/resume"
+    Export:
+      Name: !Sub "${AWS::StackName}-InvokeUrl"
+
+  HealthEndpointUrl:
+    Description: "Public health check endpoint URL"
+    Value: !Sub "https://${ResumeRestApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/health"
+
+  ApiKeyId:
+    Description: "ID of the generated API Key"
+    Value: !Ref ResumeApiKey
+
+  UsagePlanId:
+    Description: "ID of the API Gateway Usage Plan"
+    Value: !Ref ResumeApiUsagePlan
+
+  DynamoDBTableName:
+    Description: "Name of the DynamoDB resume storage table"
+    Value: !Ref ServerlessResumeTable
+
+  LambdaFunctionArn:
+    Description: "ARN of the backend Lambda function"
+    Value: !GetAtt ResumeApiFunction.Arn

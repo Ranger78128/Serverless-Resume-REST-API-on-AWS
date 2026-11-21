@@ -1,0 +1,160 @@
+{
+  "personal": {
+    "name": "Alex Vance",
+    "title": "Lead Cloud Solutions & AI Systems Engineer",
+    "email": "alex.vance@cloudsec.example.com",
+    "phone": "+1 (555) 382-9102",
+    "location": "San Francisco, CA, USA",
+    "website": "https://alexvance.cloud",
+    "linkedin": "https://linkedin.com/in/alex-vance-cloud",
+    "github": "https://github.com/alexvance-cloud",
+    "summary": "Forward-thinking Cloud Architect and AI Systems Engineer with 8+ years of experience designing scalable serverless architectures, multi-region distributed backends, and automated cloud security defenses on AWS. Expert in microservices, IaC (CloudFormation/Terraform), and high-throughput real-time APIs."
+  },
+  "experience": [
+    {
+      "id": "exp-001",
+      "company": "Apex Cloud Systems",
+      "role": "Staff Cloud Architect",
+      "period": "2023 - Present",
+      "location": "San Francisco, CA",
+      "description": "Architect of mission-critical serverless and event-driven architectures serving over 150M monthly active API requests across multi-region AWS deployments.",
+      "achievements": [
+        "Migrated legacy monolithic endpoints to AWS Lambda and Amazon API Gateway, slashing operational compute costs by 48% while maintaining 99.99% availability.",
+        "Engineered zero-trust API security pipelines utilizing custom Lambda authorizers, API Gateway Usage Plans, and AWS WAF rate-based rules.",
+        "Implemented automated DynamoDB single-table design with Global Secondary Indexes, reducing P99 query latency from 180ms to 12ms."
+      ],
+      "technologies": ["AWS Lambda", "API Gateway", "DynamoDB", "CloudFormation", "Python", "Go", "AWS WAF"]
+    },
+    {
+      "id": "exp-002",
+      "company": "Vanguard Security Technologies",
+      "role": "Senior Cloud Security Engineer",
+      "period": "2020 - 2023",
+      "location": "Seattle, WA",
+      "description": "Led automated security orchestration, incident response runbooks, and serverless API gateway defense.",
+      "achievements": [
+        "Developed automated EventBridge and Lambda incident response playbooks containing unauthorized S3 leaks and security group misconfigurations in under 3 seconds.",
+        "Designed and standardized CloudFormation and SAM templates across 45 AWS accounts adhering to CIS AWS Foundations Benchmarks.",
+        "Automated cryptographic verification and email security gateways implementing SPF, DKIM, and DMARC alignment."
+      ],
+      "technologies": ["AWS EventBridge", "Python", "IAM", "CloudTrail", "AWS Config", "Boto3", "FastAPI"]
+    },
+    {
+      "id": "exp-003",
+      "company": "NextGen FinTech Solutions",
+      "role": "Cloud Software Engineer",
+      "period": "2018 - 2020",
+      "location": "Austin, TX",
+      "description": "Built resilient RESTful microservices and data ingestion pipelines for real-time payments and credit scoring.",
+      "achievements": [
+        "Implemented high-throughput REST APIs using API Gateway, Lambda, and DynamoDB processing $50M+ daily financial transactions.",
+        "Constructed automated CI/CD deployment pipelines using GitHub Actions and AWS CodePipeline with automated unit and integration tests."
+      ],
+      "technologies": ["Python", "AWS Lambda", "DynamoDB", "SQS", "SNS", "Docker", "PostgreSQL"]
+    }
+  ],
+  "education": [
+    {
+      "id": "edu-001",
+      "institution": "University of California, Berkeley",
+      "degree": "Master of Science in Computer Science (Distributed Systems)",
+      "period": "2016 - 2018",
+      "honors": "Summa Cum Laude, Graduate Research Fellowship",
+      "coursework": ["Distributed Systems", "Cloud Computing Architecture", "Advanced Cryptography", "Database Systems"]
+    },
+    {
+      "id": "edu-002",
+      "institution": "University of Washington",
+      "degree": "Bachelor of Science in Computer Science & Engineering",
+      "period": "2012 - 2016",
+      "honors": "Dean's Honor List",
+      "coursework": ["Data Structures & Algorithms", "Operating Systems", "Computer Networks", "Computer Security"]
+    }
+  ],
+  "skills": {
+    "cloud_and_serverless": [
+      "AWS Lambda",
+      "Amazon API Gateway",
+      "Amazon DynamoDB",
+      "Amazon S3",
+      "Amazon EventBridge",
+      "Amazon SNS/SQS",
+      "AWS CloudFormation / SAM",
+      "AWS IAM & Security"
+    ],
+    "programming_languages": [
+      "Python (FastAPI, Flask, Boto3, Pydantic)",
+      "Node.js / TypeScript",
+      "Go (Golang)",
+      "SQL",
+      "Bash / Shell"
+    ],
+    "architecture_and_devops": [
+      "Serverless Architecture (FaaS)",
+      "RESTful API Design & OpenAPI",
+      "Single-Table DynamoDB Design",
+      "Infrastructure as Code (IaC)",
+      "CI/CD Automation",
+      "Docker & Containerization"
+    ],
+    "security_and_governance": [
+      "API Key Authentication & Usage Plans",
+      "Rate Limiting & Throttling",
+      "Zero-Trust Cloud Architecture",
+      "NIST SP 800-61 Incident Response",
+      "AWS WAF & Shield"
+    ]
+  },
+  "projects": [
+    {
+      "id": "proj-001",
+      "name": "Cloud Security Incident Response Framework",
+      "description": "NIST SP 800-61 aligned automated cloud incident response system with serverless Lambda remediation playbooks and EventBridge alerting.",
+      "technologies": ["AWS CloudFormation", "Lambda", "EventBridge", "SNS", "Python"],
+      "link": "https://github.com/alexvance-cloud/cloud-security-incident-response"
+    },
+    {
+      "id": "proj-002",
+      "name": "Secure Email Authentication Gateway",
+      "description": "Production-grade SPF, DKIM, and DMARC verification engine generating RFC 8601 authentication results and mitigating spear-phishing.",
+      "technologies": ["Python", "FastAPI", "Cryptography", "DNS", "RFC Standards"],
+      "link": "https://github.com/alexvance-cloud/secure-email-auth-gateway"
+    },
+    {
+      "id": "proj-003",
+      "name": "Real-Time Anomaly Detector with HMMs",
+      "description": "Unsupervised temporal anomaly detection for industrial telemetry streams using Hidden Markov Models with Gaussian emissions.",
+      "technologies": ["Python", "Scikit-Learn", "hmmlearn", "Time-Series"],
+      "link": "https://github.com/alexvance-cloud/hmm-anomaly-detector"
+    }
+  ],
+  "certifications": [
+    {
+      "id": "cert-001",
+      "name": "AWS Certified Solutions Architect – Professional",
+      "issuer": "Amazon Web Services",
+      "date": "2024",
+      "badge_id": "AWS-PSA-891024"
+    },
+    {
+      "id": "cert-002",
+      "name": "AWS Certified Security – Specialty",
+      "issuer": "Amazon Web Services",
+      "date": "2023",
+      "badge_id": "AWS-SEC-449102"
+    },
+    {
+      "id": "cert-003",
+      "name": "Certified Kubernetes Administrator (CKA)",
+      "issuer": "Cloud Native Computing Foundation (CNCF)",
+      "date": "2023",
+      "badge_id": "CKA-29401"
+    }
+  ],
+  "metadata": {
+    "version": "1.0.0",
+    "last_updated": "2026-11-21",
+    "api_version": "v1",
+    "license": "MIT"
+  }
+}
